@@ -34,8 +34,11 @@ bool PatientList::member(PatientRecord* x) {
 }
 
 bool PatientList::insert(PatientRecord* x) {
-    if (member(x))
+    if (member(x)) {
+        cerr << "ERROR\n";
+        delete x;
         return true;
+    }
 
     node* temp = head;
     head = new node;
@@ -96,4 +99,15 @@ PatientRecord* PatientList::get(int index) {
             return curr->data;
     
     return NULL;
+}
+
+PatientRecord* PatientList::pop() {
+    if(head == NULL)
+        return NULL;
+
+    PatientRecord *ret = head->data;
+    node *temp = head->next;
+    delete head;
+    head = temp;
+    return ret;
 }

@@ -70,7 +70,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-
     DIR *dir;
     struct dirent *entry;
     strList *directories = new strList();
@@ -106,9 +105,9 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int dirsLeft = directories->length();
+    int dirsLeft = directories->length();   // Num of directories not assigned to workers yet
     int pipes[numWorkers][2];
-    strList *dirsPerWorker[numWorkers];
+    strList *dirsPerWorker[numWorkers];     // Hold directories of each workers
     string summary = "";
 
     fd_set fdSet;
@@ -132,7 +131,7 @@ int main(int argc, char* argv[]) {
 
         FD_SET(pipes[w][READ], &fdSet);
 
-        int numOfDirsForWorker = dirsLeft / (numWorkers - w);
+        int numOfDirsForWorker = dirsLeft / (numWorkers - w);       // Evenly distribute directories to workers
         sendMessage(pipes[w][WRITE], to_string(numOfDirsForWorker), bufferSize);
         // Send workers their direcotries
         for(int i = 0; i < numOfDirsForWorker; i++) {
@@ -175,10 +174,11 @@ int main(int argc, char* argv[]) {
         while(received_sigchld) {
             for(int w = 0; w < numWorkers; w++) {
                 int status;
-                if(!waitpid(workerPID[w], &status, WNOHANG))
+                if(!waitpid(workerPID[w], &status, WNOHANG))    // Find terminated worker
                     continue;
                 
-                cout << endl;
+                cout << endl << "Worker with PID " << workerPID[w] << " stopped"
+                     << endl << "Initializing new Worker..." << endl;
                 // Create new Worker
                 int pid = fork();
                 if(pid == 0) {

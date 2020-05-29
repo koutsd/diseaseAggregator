@@ -46,11 +46,10 @@ int main(int argc, char* argv[]) {
 
     int id = atoi(argv[1]);
     int bufferSize = atoi(argv[2]);
-    int pipe[2];
 
     string readFIFO = fifo_file + to_string(2*id + 1);
     string writeFIFO = fifo_file + to_string(2*id);
-    // Iniot FIFOs
+    // Init FIFOs
     mkfifo(readFIFO.c_str(), 0666);
     mkfifo(writeFIFO.c_str(), 0666);
 
@@ -103,25 +102,25 @@ int main(int argc, char* argv[]) {
                     cerr << "- Error: Unable to read Record" << endl;
                     return 1;
                 }
+
+                PatientRecord *temp = entry_table[i]->find(patientID);
                 // Insert Patient record into hash tables
                 if(action == "ENTER") {
-                    PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, dateToInt(date), -1);
-                    entry_table[i]->insert(p);
+                    if(temp != NULL)
+                        cerr << "ERROR\n";
+                    else {
+                        PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, dateToInt(date), -1);
+                        entry_table[i]->insert(p);
+                    }
                 }
                 else if(action == "EXIT") {
-                    PatientRecord *p = entry_table[i]->find(patientID);
-                    // Edit record exit Date
-                    if(p == NULL) {                 // Keep in tempList to check later
-                        PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));
-                        if(tempList->member(p)) {   // Duplicate record id
-                            cerr << "ERROR\n";
-                            delete p;
-                        } else                      // insert in tempList
-                            tempList->insert(p);
+                    if(temp == NULL) {                 // Keep in tempList to check later
+                        PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));                      // insert in tempList
+                        tempList->insert(p);
                     }
-                    else if(p->exitDate == -1 && p->entry() <= dateToInt(date)) {   // Update exit date and insert to exit_tree
-                        p->exitDate = dateToInt(date);
-                        exit_tree[i]->insert_2(p);
+                    else if(temp->exitDate == -1 && temp->entry() <= dateToInt(date)) {   // Update exit date and insert to exit_tree
+                        temp->exitDate = dateToInt(date);
+                        exit_tree[i]->insert_2(temp);
                     }
                     else                            // Patient with this id already has exit date
                         cerr << "ERROR\n";
@@ -136,18 +135,19 @@ int main(int argc, char* argv[]) {
         // Recheck records in tempList
         PatientRecord *temp = NULL;
         int index = 0;
-        while((temp = tempList->get(index++)) != NULL) {
-            PatientRecord *p = entry_table[i]->find(patientID);
+        while((temp = tempList->pop()) != NULL) {
+            PatientRecord *p = entry_table[i]->find(temp->id());
             // Record patient EXIT
             if(p != NULL && p->exitDate == -1 && p->entry() <= temp->exitDate) {
-                p->exitDate = dateToInt(date);
+                p->exitDate = temp->exitDate;
                 exit_tree[i]->insert_2(p);
             }
             else
                 cerr << "ERROR\n";
+            
+            delete temp;
         }
 
-        tempList->deleteRecords();
         delete tempList;
     }
 
@@ -186,11 +186,13 @@ int main(int argc, char* argv[]) {
 
         if(received_sigusr1) {
             received_sigusr1 = 0;
-            cerr << endl;
+            cerr << endl << "Worker with PID " << getpid() << " received SIGUSR1 signal" << endl 
+                 << "Updating Patient records..." << endl;
             // Search directories for new files
             for(int i = 0; i < numOfDirs; i++) {
                 string country = directories[i].name.substr(directories[i].name.find("/") + 1);
                 DIR *dir;
+
                 struct dirent *entry;
 
                 if (!(dir = opendir(directories[i].name.c_str()))) {
@@ -198,20 +200,21 @@ int main(int argc, char* argv[]) {
                     return 1;
                 }
 
+                // Temporarily store EXIT records to insert later
                 PatientList *tempList = new PatientList();
-
+                // Read files from country Dir
                 while(entry = readdir(dir)) {
                     if(!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
                         continue;
-                    
+                    // Date file
                     date = entry->d_name;
-                    // File already exists
-                    if(directories[i].files->member(date))
+                    if(directories[i].files->member(date))  // Find new date file
                         continue;
 
                     directories[i].files->add(date);
+
                     ifstream ifs(directories[i].name + "/" + date);
-                    // Read and insert records
+
                     while(getline(ifs, line)) {
                         istringstream iss(line);
 
@@ -219,53 +222,57 @@ int main(int argc, char* argv[]) {
                             cerr << "- Error: Unable to read Record" << endl;
                             return 1;
                         }
+
+                        PatientRecord *temp = entry_table[i]->find(patientID);
                         // Insert Patient record into hash tables
                         if(action == "ENTER") {
-                            PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, dateToInt(date), -1);
-                            entry_table[i]->insert(p);
+                            if(temp != NULL)
+                                cerr << "ERROR\n";
+                            else {
+                                PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, dateToInt(date), -1);
+                                entry_table[i]->insert(p);
+                            }
                         }
                         else if(action == "EXIT") {
-                            PatientRecord *p = entry_table[i]->find(patientID);
                             // Edit record exit Date
-                            if(p == NULL) { // Keep to check later
-                                PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));
-                                if(tempList->member(p))
-                                    delete p;
-                                else
-                                    tempList->insert(p);
+                            if(temp == NULL) {                 // Keep in tempList to check later
+                                PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));                      // insert in tempList
+                                tempList->insert(p);
                             }
-                            else if(p->exitDate == -1 && p->entry() <= dateToInt(date)) {
-                                p->exitDate = dateToInt(date);
-                                exit_tree[i]->insert_2(p);
+                            else if(temp->exitDate == -1 && temp->entry() <= dateToInt(date)) {   // Update exit date and insert to exit_tree
+                                temp->exitDate = dateToInt(date);
+                                exit_tree[i]->insert_2(temp);
                             }
-                            else
+                            else                            // Patient with this id already has exit date
                                 cerr << "ERROR\n";
                         }
                     }
 
                     ifs.close();
+                    summary += date + "\n" + entry_table[i]->summary(dateToInt(date));
                 }
 
                 closedir(dir);
-
+                // Recheck records in tempList
                 PatientRecord *temp = NULL;
                 int index = 0;
-                while((temp = tempList->get(index++)) != NULL) {
-                    PatientRecord *p = entry_table[i]->find(patientID);
-                    // Record patient Exit
-                    if(p == NULL)
-                        cerr << "ERROR\n";
-                    else if(p->exitDate == -1 && p->entry() <= temp->exitDate) {
-                        p->exitDate = dateToInt(date);
+                while((temp = tempList->pop()) != NULL) {
+                    PatientRecord *p = entry_table[i]->find(temp->id());
+                    // Record patient EXIT
+                    if(p != NULL && p->exitDate == -1 && p->entry() <= temp->exitDate) {
+                        p->exitDate = temp->exitDate;
                         exit_tree[i]->insert_2(p);
                     }
+                    else
+                        cerr << "ERROR\n";
+                    
+                    delete temp;
                 }
 
-                tempList->deleteRecords();
                 delete tempList;
             }
 
-            cerr << "> ";
+            cerr << "\n> ";
             continue;
         }
 

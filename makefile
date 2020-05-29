@@ -30,4 +30,4 @@ PatientRecord.o: SourceFiles/PatientRecord.cpp
 
 
 clean:
-	rm -rf *.o worker diseaseAggregator
+	rm -rf *.o worker diseaseAggregator log
