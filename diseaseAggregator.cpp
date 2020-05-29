@@ -20,6 +20,7 @@ using namespace std;
 
 static volatile sig_atomic_t received_sigchld = 0;
 static volatile sig_atomic_t received_sigint = 0;
+static volatile sig_atomic_t received_sigusr1 = 0;
 
 void handle_sigchld(int sig) {
     received_sigchld++;
@@ -27,7 +28,10 @@ void handle_sigchld(int sig) {
 
 void handle_sigint(int sig) {
     received_sigint = 1;
-    close(0);   // Close stdin to stop getline()
+}
+
+void handle_sigusr1(int sig) {
+    received_sigusr1++;
 }
 
 
@@ -35,7 +39,8 @@ int main(int argc, char* argv[]) {
     signal(SIGCHLD, handle_sigchld);
     signal(SIGINT, handle_sigint);
     signal(SIGQUIT, handle_sigint);
-    
+    signal(SIGUSR1, handle_sigusr1);
+
     string fifo_file = "/tmp/myfifo";
 
     int bufferSize, numWorkers;
@@ -87,7 +92,7 @@ int main(int argc, char* argv[]) {
     // Dont create unnecessary workers
     if(numWorkers > directories->length()) 
         numWorkers = directories->length();
-        
+
     int workerPID[numWorkers];
     // Init workers
     for(int w = 0; w < numWorkers; w++) {
@@ -163,20 +168,48 @@ int main(int argc, char* argv[]) {
     }
 
     cout << summary;
+
     // Init log_file stats
     int success = 0;
     int fail = 0;
 
-    string line;
-    while(cout << "> " && getline(cin, line)) {
-        string query = "";
-        // Handle sigchld
+    while(!received_sigint) {
+        string query = "", line = "";
+        bool received_sig = true;
+
+        cout << "> ";
+        cout.flush();
+        // Wait for user input
+        while(!received_sigint && !received_sigusr1 && !received_sigchld) {
+            fd_set stdin_fdSet;
+            FD_ZERO(&stdin_fdSet);
+            FD_SET(0, &stdin_fdSet);
+
+            if(select(1, &stdin_fdSet, NULL, NULL, NULL) < 0)
+                if(!received_sigint && !received_sigusr1 && !received_sigchld) {    // Not interupted by signal
+                    cerr << "- Error: Select()\n";
+                    return 1;
+                }
+
+            if(FD_ISSET(0, &stdin_fdSet)) {
+                received_sig = false;
+                getline(cin, line);
+                break;
+            }
+        }
+        // Handle SIGINT/SIGQUIT --> termintate applicatin
+        if(received_sigint)
+            break;
+
+        if(received_sig) cout << endl;
+        // Handle SIGCHLD --> init new worker
         while(received_sigchld) {
+            summary = "";
             for(int w = 0; w < numWorkers; w++) {
                 int status;
                 if(!waitpid(workerPID[w], &status, WNOHANG))    // Find terminated worker
                     continue;
-                
+
                 cout << endl << "Worker with PID " << workerPID[w] << " stopped"
                      << endl << "Initializing new Worker..." << endl;
                 // Create new Worker
@@ -192,7 +225,7 @@ int main(int argc, char* argv[]) {
                 else {
                     workerPID[w] = pid;
                 }
-                
+
                 string readFIFO = fifo_file + to_string(2*w);
                 string writeFIFO = fifo_file + to_string(2*w + 1);       
                 // Close old FIFOs
@@ -208,7 +241,7 @@ int main(int argc, char* argv[]) {
 
                 if(maxfd < pipes[w][READ])
                     maxfd = pipes[w][READ];
-                
+
                 sendMessage(pipes[w][WRITE], to_string(dirsPerWorker[w]->length()), bufferSize);
 
                 for(int i = 0; i < dirsPerWorker[w]->length(); i++) {
@@ -217,15 +250,35 @@ int main(int argc, char* argv[]) {
                     sendMessage(pipes[w][WRITE], subDir, bufferSize);
                 }
                 // Receive summary stats of new worker
-                receiveMessage(pipes[w][READ], bufferSize);
+                summary += receiveMessage(pipes[w][READ], bufferSize);
 
                 if(--received_sigchld == 0) {
-                    cout << endl;
                     break;
                 }
             }
+
+            cout << endl << summary;
         }
-        
+        // Handle SIGUSR1 --> Wait for summary stats from workers that sent the sigusr1
+        while(received_sigusr1) {
+            fd_set tempSet = fdSet;
+
+            if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0) {
+                cerr << "- Error: Select()\n";
+                return 1;
+            }
+
+            for(int i = 0; i < maxfd + 1; i++)
+                if(FD_ISSET(i, &tempSet)) {
+                    cout << endl << receiveMessage(i, bufferSize);      // summary
+                    received_sigusr1--;
+                    break;
+                }
+        }
+        // Resume waiting for user input
+        if(received_sig)
+            continue;
+
         istringstream s(line);
         s >> query;
         // Start processing query
@@ -235,7 +288,7 @@ int main(int argc, char* argv[]) {
             for(int w = 0; w < numWorkers; w++)
                 for(int d = 0; d < dirsPerWorker[w]->length(); d++)
                     cout << dirsPerWorker[w]->get(d) << " " << workerPID[w] << endl;
-                    
+
             success++;
             cout << endl;
         }

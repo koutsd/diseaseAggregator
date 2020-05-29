@@ -24,6 +24,6 @@ public:
     int count(PatientRecord *p=NULL);   // Count all records similar to p
     PatientRecord* find(string id);
     PatientRecord* get(int index);
-    PatientRecord* pop();
+    PatientRecord* pop();               // Remove first node and return data
 };
 

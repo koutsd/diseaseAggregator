@@ -16,6 +16,7 @@
 
 using namespace std;
 
+
 static volatile sig_atomic_t received_sigint = 0;
 static volatile sig_atomic_t received_sigusr1 = 0;
 
@@ -47,6 +48,11 @@ int main(int argc, char* argv[]) {
     int id = atoi(argv[1]);
     int bufferSize = atoi(argv[2]);
 
+    if(bufferSize < 2) {
+        cerr <<  "- Error: Buffer size must be at least 2 Bytes\n";
+        return 1;
+    }
+
     string readFIFO = fifo_file + to_string(2*id + 1);
     string writeFIFO = fifo_file + to_string(2*id);
     // Init FIFOs
@@ -57,6 +63,10 @@ int main(int argc, char* argv[]) {
     int writePipe = open(writeFIFO.c_str(), O_WRONLY);
     // Read num of directories for workers
     int numOfDirs = stoi(receiveMessage(readPipe, bufferSize));
+    if(numOfDirs <= 0) {
+        cerr << "- Error: Worker must have at least 1 Directory\n";
+        return 1;
+    }
     // Read paths of worker's direcotries
     Dir directories[numOfDirs];
     for(int i = 0; i < numOfDirs; i++)
@@ -74,7 +84,6 @@ int main(int argc, char* argv[]) {
         directories[i].files = new strList();
 
         country = directories[i].name.substr(directories[i].name.find("/") + 1);
-        summary += "\n" + country + "\n";
 
         DIR *dir;
         struct dirent *entry;
@@ -115,7 +124,7 @@ int main(int argc, char* argv[]) {
                 }
                 else if(action == "EXIT") {
                     if(temp == NULL) {                 // Keep in tempList to check later
-                        PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));                      // insert in tempList
+                        PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));
                         tempList->insert(p);
                     }
                     else if(temp->exitDate == -1 && temp->entry() <= dateToInt(date)) {   // Update exit date and insert to exit_tree
@@ -128,7 +137,7 @@ int main(int argc, char* argv[]) {
             }
 
             ifs.close();
-            summary += date + "\n" + entry_table[i]->summary(dateToInt(date));
+            summary += date + "\n" + country + "\n" + entry_table[i]->summary(dateToInt(date));
         }
 
         closedir(dir);
@@ -144,7 +153,7 @@ int main(int argc, char* argv[]) {
             }
             else
                 cerr << "ERROR\n";
-            
+
             delete temp;
         }
 
@@ -164,35 +173,35 @@ int main(int argc, char* argv[]) {
     while(!received_sigint) {
         string param1 = "", param2 = "", param3 = "";
         int date1, date2, temp;
-        
+        // Wait for parent to send query
         fd_set tempSet = fdSet;
-        while(true) {
+        while(!received_sigint && !received_sigusr1) {
             if(select(readPipe + 1, &tempSet, NULL, NULL, NULL) < 0)
-                if(received_sigint || received_sigusr1)
+                if(received_sigint || received_sigusr1)     // Select failed due to signal
                     break;
                 else {
                     cerr << "- Error: Select()\n";
                     return 1;
                 }
-            
+
             if(FD_ISSET(readPipe, &tempSet)) {
                 line = receiveMessage(readPipe, bufferSize);
                 break;
             }
         }
-
+        // Handle SIGINT/SIGQUIT --> Exit application
         if(received_sigint)
             break;
-
+        // Handle SIGUSR1 --> insert new records and inform parent
         if(received_sigusr1) {
+            cerr << endl;
             received_sigusr1 = 0;
-            cerr << endl << "Worker with PID " << getpid() << " received SIGUSR1 signal" << endl 
-                 << "Updating Patient records..." << endl;
+            summary = "";
             // Search directories for new files
             for(int i = 0; i < numOfDirs; i++) {
                 string country = directories[i].name.substr(directories[i].name.find("/") + 1);
-                DIR *dir;
 
+                DIR *dir;
                 struct dirent *entry;
 
                 if (!(dir = opendir(directories[i].name.c_str()))) {
@@ -236,7 +245,7 @@ int main(int argc, char* argv[]) {
                         else if(action == "EXIT") {
                             // Edit record exit Date
                             if(temp == NULL) {                 // Keep in tempList to check later
-                                PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));                      // insert in tempList
+                                PatientRecord *p = new PatientRecord(patientID, fName, lName, disease, country, age, -1, dateToInt(date));
                                 tempList->insert(p);
                             }
                             else if(temp->exitDate == -1 && temp->entry() <= dateToInt(date)) {   // Update exit date and insert to exit_tree
@@ -249,7 +258,7 @@ int main(int argc, char* argv[]) {
                     }
 
                     ifs.close();
-                    summary += date + "\n" + entry_table[i]->summary(dateToInt(date));
+                    summary += date + "\n" + country + "\n" + entry_table[i]->summary(dateToInt(date));
                 }
 
                 closedir(dir);
@@ -265,14 +274,15 @@ int main(int argc, char* argv[]) {
                     }
                     else
                         cerr << "ERROR\n";
-                    
+
                     delete temp;
                 }
 
                 delete tempList;
             }
 
-            cerr << "\n> ";
+            kill(getppid(), SIGUSR1);
+            sendMessage(writePipe, summary, bufferSize);
             continue;
         }
 
@@ -281,7 +291,7 @@ int main(int argc, char* argv[]) {
 
         if(query == "/diseaseFrequency") {
             s >> disease >> param1 >> param2 >> param3;
-            
+
             if(!isDate(param1) || !isDate(param2)) {
                 fail++;
                 sendMessage(writePipe, "-1", bufferSize);
@@ -317,7 +327,7 @@ int main(int argc, char* argv[]) {
                 sendMessage(writePipe, "", bufferSize);
                 continue;
             }
-            
+
             date1 = dateToInt(param1);
             date2 = dateToInt(param2);
 
@@ -393,7 +403,7 @@ int main(int argc, char* argv[]) {
                     break;
                 }
             }
-            
+
             res == "" ? fail++ : success++;
             sendMessage(writePipe, res, bufferSize);
         }
