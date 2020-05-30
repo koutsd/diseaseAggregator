@@ -117,8 +117,7 @@ string Max_Heap::extractMax() {
     if(height(root) < 0)    // if root == NULL
         return ret;
     // Print root data
-    if(root->value)
-        ret = root->key + ": " + to_string(root->value) + "%\n";
+    ret = root->key + ": " + to_string(root->value) + "%\n";
     // Delete root
     if(height(root) == 0) {
         delete root;

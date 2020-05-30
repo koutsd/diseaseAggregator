@@ -11,26 +11,30 @@
 #include <sys/select.h> 
 #include <sys/wait.h>
 #include <unistd.h>
+
 #include "HeaderFiles/Util.h"
 
 enum {READ = 0, WRITE = 1};
 
 using namespace std;
 
-
+static volatile sig_atomic_t signals_received = 0;
 static volatile sig_atomic_t received_sigint = 0;
 static volatile sig_atomic_t received_sigchld = 0;
 static volatile sig_atomic_t received_sigusr1 = 0;
 
 void handle_sigint(int sig) {
+    signals_received++;
     received_sigint = 1;
 }
 
 void handle_sigchld(int sig) {
+    signals_received++;
     received_sigchld++;
 }
 
 void handle_sigusr1(int sig) {
+    signals_received++;
     received_sigusr1++;
 }
 
@@ -154,15 +158,17 @@ int main(int argc, char* argv[]) {
     while(msgReceived < numWorkers - received_sigchld) {
         fd_set tempSet = fdSet;
 
-        if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0) {
-            cerr << "- Error: Select()\n";
-            return 1;
-        }
+        if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
+            if(!signals_received) {
+                cerr << "- Error: Select()\n";
+                return 1;
+            }
 
-        for(int i = 0; i < maxfd + 1; i++)
-            if(FD_ISSET(i, &tempSet)) {
-                summary += receiveMessage(i, bufferSize);
+        for(int w = 0; w < numWorkers; w++)
+            if(FD_ISSET(pipes[w][READ], &tempSet)) {
+                summary += receiveMessage(pipes[w][READ], bufferSize);
                 msgReceived++;
+                FD_CLR(pipes[w][READ], &tempSet);
                 break;
             }
     }
@@ -175,18 +181,17 @@ int main(int argc, char* argv[]) {
 
     while(!received_sigint) {
         string query = "", line = "";
-        bool received_sig = true;
 
         cout << "> ";
         cout.flush();
         // Wait for user input
-        while(!received_sigint && !received_sigusr1 && !received_sigchld) {
+        while(!signals_received) {
             fd_set stdin_fdSet;
             FD_ZERO(&stdin_fdSet);
             FD_SET(0, &stdin_fdSet);
 
             if(select(1, &stdin_fdSet, NULL, NULL, NULL) < 0)
-                if(!received_sigint && !received_sigusr1 && !received_sigchld) {    // Not interupted by signal
+                if(!signals_received) {    // Not interupted by signal
                     cerr << "- Error: Select()\n";
                     return 1;
                 }
@@ -196,7 +201,6 @@ int main(int argc, char* argv[]) {
                 }
 
             if(FD_ISSET(0, &stdin_fdSet)) {
-                received_sig = false;
                 getline(cin, line);
                 break;
             }
@@ -253,6 +257,7 @@ int main(int argc, char* argv[]) {
                 // Receive summary stats of new worker
                 summary += receiveMessage(pipes[w][READ], bufferSize) + "- Worker with PID " + to_string(workerPID[w]) + " ready\n";
 
+                signals_received--;
                 if(--received_sigchld == 0)
                     break;
             }
@@ -263,21 +268,23 @@ int main(int argc, char* argv[]) {
         while(received_sigusr1) {
             fd_set tempSet = fdSet;
 
-            if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0) {
-                cerr << "- Error: Select()\n";
-                return 1;
-            }
+            if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
+                if(!signals_received) {
+                    cerr << "- Error: Select()\n";
+                    return 1;
+                }
 
-            for(int i = 0; i < maxfd + 1; i++)
-                if(FD_ISSET(i, &tempSet)) {
-                    cout << receiveMessage(i, bufferSize) << "- Worker updated patient Records" << endl << endl;      // summary
+            for(int w = 0; w < numWorkers; w++)
+                if(FD_ISSET(pipes[w][READ], &tempSet)) {
+                    cout << receiveMessage(pipes[w][READ], bufferSize) << "- Worker updated patient Records" << endl << endl;      // summary
                     received_sigusr1--;
+                    signals_received--;
+                    FD_CLR(pipes[w][READ], &tempSet);
                     break;
                 }
         }
         // Resume waiting for user input
-        if(received_sig)
-            continue;
+        if(signals_received) continue;
 
         istringstream s(line);
         s >> query;
@@ -301,15 +308,17 @@ int main(int argc, char* argv[]) {
             while(msgReceived < numWorkers - received_sigchld) {
                 fd_set tempSet = fdSet;
 
-                if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0) {
-                    cerr << "- Error: Select()\n";
-                    return 1;
-                }
+                if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
+                    if(!signals_received) {
+                        cerr << "- Error: Select()\n";
+                        return 1;
+                    }
 
-                for(int i = 0; i < maxfd + 1; i++)
-                    if(FD_ISSET(i, &tempSet)) {
-                        frequency += stoi(receiveMessage(i, bufferSize));
+                for(int w = 0; w < numWorkers; w++)
+                    if(FD_ISSET(pipes[w][READ], &tempSet)) {
+                        frequency += stoi(receiveMessage(pipes[w][READ], bufferSize));
                         msgReceived++;
+                        FD_CLR(pipes[w][READ], &tempSet);
                         break;
                     }
             }
@@ -330,15 +339,17 @@ int main(int argc, char* argv[]) {
             while(msgReceived < numWorkers - received_sigchld) {
                 fd_set tempSet = fdSet;
 
-                if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0) {
-                    cerr << "- Error: Select()\n";
-                    return 1;
-                }
+                if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
+                    if(!signals_received) {
+                        cerr << "- Error: Select()\n";
+                        return 1;
+                    }
 
-                for(int i = 0; i < maxfd + 1; i++)
-                    if(FD_ISSET(i, &tempSet)) {
-                        res += receiveMessage(i, bufferSize);
+                for(int w = 0; w < numWorkers; w++)
+                    if(FD_ISSET(pipes[w][READ], &tempSet)) {
+                        res += receiveMessage(pipes[w][READ], bufferSize);
                         msgReceived++;
+                        FD_CLR(pipes[w][READ], &tempSet);
                         break;
                     }
             }
@@ -367,7 +378,7 @@ int main(int argc, char* argv[]) {
 
     logfile.close();
 
-    cout << "- Created log_file" + to_string(getpid()) << endl;
+    cout << "- Created log_file." + to_string(getpid()) << endl;
     // Terminate workers
     for(int w = 0; w < numWorkers; w++)
         kill(workerPID[w], SIGKILL);

@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 #include "HeaderFiles/Hash_Table.h"
 #include "HeaderFiles/Util.h"
 
@@ -82,7 +83,7 @@ int main(int argc, char* argv[]) {
         exit_tree[i] = new AVL_Tree();
         directories[i].files = new strList();
 
-        country = directories[i].name.substr(directories[i].name.find("/") + 1);
+        country = directories[i].name.substr(directories[i].name.find_last_of("/") + 1);
 
         DIR *dir;
         struct dirent *entry;
@@ -198,7 +199,7 @@ int main(int argc, char* argv[]) {
             summary = "";
             // Search directories for new files
             for(int i = 0; i < numOfDirs; i++) {
-                string country = directories[i].name.substr(directories[i].name.find("/") + 1);
+                string country = directories[i].name.substr(directories[i].name.find_last_of("/") + 1);
 
                 DIR *dir;
                 struct dirent *entry;
@@ -207,7 +208,6 @@ int main(int argc, char* argv[]) {
                     cerr << "- Error: Unable to open directory" << endl;
                     return 1;
                 }
-
                 // Temporarily store EXIT records to insert later
                 PatientList *tempList = new PatientList();
                 // Read files from country Dir
@@ -308,7 +308,7 @@ int main(int argc, char* argv[]) {
 
             int frequency = 0;
             for(int i = 0; i < numOfDirs; i++) {
-                string country = directories[i].name.substr(directories[i].name.find("/") + 1);
+                string country = directories[i].name.substr(directories[i].name.find_last_of("/") + 1);
                 if(param3 == "" || param3 == country) {
                     frequency += entry_table[i]->frequency(disease, date1, date2);
                     if(param3 == country) break;
@@ -338,7 +338,7 @@ int main(int argc, char* argv[]) {
 
             string admissions = "";
             for(int i = 0; i < numOfDirs; i++) {
-                string country = directories[i].name.substr(directories[i].name.find("/") + 1);
+                string country = directories[i].name.substr(directories[i].name.find_last_of("/") + 1);
                 if(param3 == "" || param3 == country) {
                     admissions += country + " " + to_string(entry_table[i]->frequency(disease, date1, date2)) + "\n";
                     if(param3 == country) break;
@@ -396,7 +396,7 @@ int main(int argc, char* argv[]) {
 
             string res = "";
             for(int i = 0; i < numOfDirs; i++) {
-                string country = directories[i].name.substr(directories[i].name.find("/") + 1);
+                string country = directories[i].name.substr(directories[i].name.find_last_of("/") + 1);
                 if(param3 == country) {
                     res = entry_table[i]->topK_AgeRanges(k, disease, date1, date2);
                     break;
@@ -428,7 +428,7 @@ int main(int argc, char* argv[]) {
 
             string discharges = "";
             for(int i = 0; i < numOfDirs; i++) {
-                string country = directories[i].name.substr(directories[i].name.find("/") + 1);
+                string country = directories[i].name.substr(directories[i].name.find_last_of("/") + 1);
                 if(param3 == "" || param3 == country) {
                     discharges += country + " " + to_string(exit_tree[i]->count(date1, date2, p)) + "\n";
                     if(param3 == country) break;
@@ -444,7 +444,7 @@ int main(int argc, char* argv[]) {
     ofstream logfile("log/log_file." + to_string(getpid()));
 
     for(int i = 0; i < numOfDirs; i++)
-        logfile <<  directories[i].name.substr(directories[i].name.find("/") + 1) + "\n";
+        logfile <<  directories[i].name.substr(directories[i].name.find_last_of("/") + 1) + "\n";
 
     logfile << "TOTAL " + to_string(success + fail) + "\n" 
             + "SUCCESS " + to_string(success) + "\n"
