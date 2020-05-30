@@ -17,15 +17,14 @@
 using namespace std;
 
 
-static volatile sig_atomic_t received_sigint = 0;
-static volatile sig_atomic_t received_sigusr1 = 0;
-
-
 struct Dir {
     string name;
     strList *files;
 };
 
+
+static volatile sig_atomic_t received_sigint = 0;
+static volatile sig_atomic_t received_sigusr1 = 0;
 
 void handle_sigint(int sig) {
     received_sigint = 1;

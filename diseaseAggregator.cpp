@@ -18,16 +18,16 @@ enum {READ = 0, WRITE = 1};
 using namespace std;
 
 
-static volatile sig_atomic_t received_sigchld = 0;
 static volatile sig_atomic_t received_sigint = 0;
+static volatile sig_atomic_t received_sigchld = 0;
 static volatile sig_atomic_t received_sigusr1 = 0;
-
-void handle_sigchld(int sig) {
-    received_sigchld++;
-}
 
 void handle_sigint(int sig) {
     received_sigint = 1;
+}
+
+void handle_sigchld(int sig) {
+    received_sigchld++;
 }
 
 void handle_sigusr1(int sig) {
@@ -167,7 +167,7 @@ int main(int argc, char* argv[]) {
             }
     }
 
-    cout << summary;
+    cout << endl << summary;
 
     // Init log_file stats
     int success = 0;
@@ -212,8 +212,7 @@ int main(int argc, char* argv[]) {
                 if(!waitpid(workerPID[w], &status, WNOHANG))    // Find terminated worker
                     continue;
 
-                cout << endl << "Worker with PID " << workerPID[w] << " stopped"
-                     << endl << "Initializing new Worker..." << endl;
+                cout << "- Worker with PID " << workerPID[w] << " stopped" << endl << "- Initializing new Worker..." << endl;
                 // Create new Worker
                 int pid = fork();
                 if(pid == 0) {
@@ -252,13 +251,13 @@ int main(int argc, char* argv[]) {
                     sendMessage(pipes[w][WRITE], subDir, bufferSize);
                 }
                 // Receive summary stats of new worker
-                summary += receiveMessage(pipes[w][READ], bufferSize);
+                summary += receiveMessage(pipes[w][READ], bufferSize) + "- Worker with PID " + to_string(workerPID[w]) + " ready\n";
 
                 if(--received_sigchld == 0)
                     break;
             }
 
-            cout << endl << summary;
+            cout << endl << summary << endl;
         }
         // Handle SIGUSR1 --> Wait for summary stats from workers that sent the sigusr1
         while(received_sigusr1) {
@@ -271,7 +270,7 @@ int main(int argc, char* argv[]) {
 
             for(int i = 0; i < maxfd + 1; i++)
                 if(FD_ISSET(i, &tempSet)) {
-                    cout << receiveMessage(i, bufferSize);      // summary
+                    cout << receiveMessage(i, bufferSize) << "- Worker updated patient Records" << endl << endl;      // summary
                     received_sigusr1--;
                     break;
                 }
@@ -347,9 +346,13 @@ int main(int argc, char* argv[]) {
             res == "" ? fail++ : success++;
             cout << res << endl;
         }
-        else fail++;
+        else if(query != ""){
+            cout << "- Invalid Query" << endl << endl;
+            fail++;
+        }
     }
     // Exit
+    cout << "- Exiting..." << endl;
     // Create log_file
     mkdir("log", 0700);
     ofstream logfile("log/log_file." + to_string(getpid()));
@@ -363,12 +366,16 @@ int main(int argc, char* argv[]) {
              + "FAIL " + to_string(fail) + "\n";
 
     logfile.close();
+
+    cout << "- Created log_file" + to_string(getpid()) << endl;
     // Terminate workers
     for(int w = 0; w < numWorkers; w++)
         kill(workerPID[w], SIGKILL);
 
     int status = 0;
     while (wait(&status) > 0);
+
+    cout << "- Terminated Workers" << endl;
     // Close pipes and free allocated memory
     for(int w = 0; w < numWorkers; w++) {
         string readFIFO = fifo_file + to_string(2*w);
@@ -383,5 +390,6 @@ int main(int argc, char* argv[]) {
         delete dirsPerWorker[w];
     }
 
+    cout << endl;
     return 0;
 }
