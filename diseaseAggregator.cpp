@@ -190,6 +190,10 @@ int main(int argc, char* argv[]) {
                     cerr << "- Error: Select()\n";
                     return 1;
                 }
+                else {
+                    cout << endl;
+                    break;
+                }
 
             if(FD_ISSET(0, &stdin_fdSet)) {
                 received_sig = false;
@@ -200,8 +204,6 @@ int main(int argc, char* argv[]) {
         // Handle SIGINT/SIGQUIT --> termintate applicatin
         if(received_sigint)
             break;
-
-        if(received_sig) cout << endl;
         // Handle SIGCHLD --> init new worker
         while(received_sigchld) {
             summary = "";
@@ -252,9 +254,8 @@ int main(int argc, char* argv[]) {
                 // Receive summary stats of new worker
                 summary += receiveMessage(pipes[w][READ], bufferSize);
 
-                if(--received_sigchld == 0) {
+                if(--received_sigchld == 0)
                     break;
-                }
             }
 
             cout << endl << summary;
@@ -270,7 +271,7 @@ int main(int argc, char* argv[]) {
 
             for(int i = 0; i < maxfd + 1; i++)
                 if(FD_ISSET(i, &tempSet)) {
-                    cout << endl << receiveMessage(i, bufferSize);      // summary
+                    cout << receiveMessage(i, bufferSize);      // summary
                     received_sigusr1--;
                     break;
                 }
