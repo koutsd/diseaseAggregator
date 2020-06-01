@@ -5,10 +5,10 @@
 #include <cstdlib>
 #include <dirent.h>
 #include <cstring>
-#include <fcntl.h> 
-#include <sys/stat.h> 
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/select.h> 
+#include <sys/select.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, handle_sigint);
     signal(SIGQUIT, handle_sigint);
     signal(SIGUSR1, handle_sigusr1);
-
+    
     string fifo_file = "/tmp/myfifo";
 
     int bufferSize, numWorkers;
@@ -159,7 +159,9 @@ int main(int argc, char* argv[]) {
         fd_set tempSet = fdSet;
 
         if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
-            if(!signals_received) {
+            if(signals_received)
+                continue;
+            else {
                 cerr << "- Error: Select()\n";
                 return 1;
             }
@@ -174,7 +176,6 @@ int main(int argc, char* argv[]) {
     }
 
     cout << endl << summary;
-
     // Init log_file stats
     int success = 0;
     int fail = 0;
@@ -269,10 +270,13 @@ int main(int argc, char* argv[]) {
             fd_set tempSet = fdSet;
 
             if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
-                if(!signals_received) {
+                if(signals_received)
+                    continue;
+                else {
                     cerr << "- Error: Select()\n";
                     return 1;
                 }
+                    
 
             for(int w = 0; w < numWorkers; w++)
                 if(FD_ISSET(pipes[w][READ], &tempSet)) {
@@ -285,7 +289,7 @@ int main(int argc, char* argv[]) {
         }
         // Resume waiting for user input
         if(signals_received) continue;
-
+        
         istringstream s(line);
         s >> query;
         // Start processing query
@@ -309,7 +313,9 @@ int main(int argc, char* argv[]) {
                 fd_set tempSet = fdSet;
 
                 if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
-                    if(!signals_received) {
+                    if(signals_received)
+                        continue;
+                    else {
                         cerr << "- Error: Select()\n";
                         return 1;
                     }
@@ -340,7 +346,9 @@ int main(int argc, char* argv[]) {
                 fd_set tempSet = fdSet;
 
                 if(select(maxfd + 1, &tempSet, NULL, NULL, NULL) < 0)
-                    if(!signals_received) {
+                    if(signals_received)
+                        continue;
+                    else {
                         cerr << "- Error: Select()\n";
                         return 1;
                     }
